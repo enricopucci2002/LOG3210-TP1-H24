@@ -1,0 +1,316 @@
+options {
+	JAVA_UNICODE_ESCAPE=true;
+	STATIC=false;					// 1 seul parseur actif a la fois (+ rapide)
+	MULTI=true;						// type noeud = f(nom noeud)
+	VISITOR=true;					// Cree une methode accept(visiteur)
+}
+
+//
+// PARSER DEFINITION
+//
+
+PARSER_BEGIN(Parser)
+
+package analyzer.ast;
+
+public class Parser
+{
+	public static ASTProgram ParseTree(java.io.InputStream input) throws ParseException
+	{
+		Parser c = new Parser(input);
+		return c.Program();
+	}
+}
+
+PARSER_END(Parser)
+
+//
+// LEXICAL ANALYSIS
+//
+
+// White space
+
+SKIP :
+{
+	< ( " " | "\t" | "\n" | "\r" )+	>
+}
+
+// Comments
+
+MORE :
+{
+  "//" : IN_SINGLE_LINE_COMMENT
+|
+  <"/**" ~["/"]> { input_stream.backup(1); } : IN_FORMAL_COMMENT
+|
+  "/*" : IN_MULTI_LINE_COMMENT
+}
+
+<IN_SINGLE_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <SINGLE_LINE_COMMENT: "\n" | "\r" | "\r\n" > : DEFAULT
+}
+
+<IN_FORMAL_COMMENT>
+SPECIAL_TOKEN :
+{
+  <FORMAL_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_MULTI_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <MULTI_LINE_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_SINGLE_LINE_COMMENT,IN_FORMAL_COMMENT,IN_MULTI_LINE_COMMENT>
+MORE :
+{
+  < ~[] >
+}
+
+
+
+
+// Keywords
+TOKEN :
+{
+	< IF: "if"	> |
+	< ELSE: "else" > |
+	< STRING: "string"> |
+	< INT: "int"> |
+	< FLOAT: "float" > |
+	< BOOL: "bool"> |
+	< PRINT: "print" > |
+	< INPUT: "input" > |
+	< IN: "in" > |
+	< DO: "do" > |
+	< WHILE: "while" > |
+	< SWITCH: "switch" > |
+	< CASE: "case" > |
+    < DEF: "default">|
+    < FOR: "for"> |
+    < FUNC: "func"> |
+    < RET: "return">
+	// À compléter au besoin
+}
+
+// Operators
+TOKEN :
+{
+	< ASSIGN: < EQUAL >  > |
+	< COMPARE: < LESS > | < LESSEQUAL > | < GREAT > | <GREATEQUAL > | < DIFF > | < EQUALEQUAL > > |
+    < LOGIC: < AND > | < OR > > |
+	< #LESS: "<" > |
+	< #LESSEQUAL: "<=" > |
+	< #GREAT: ">" > |
+	< #GREATEQUAL: ">=" > |
+	< #DIFF: "!=" > |
+	< #EQUALEQUAL: "==" > |
+
+	< PLUS: "+" > |
+	< MINUS: "-" > |
+	< FOIS: "*" > |
+	< DIV: "/" > |
+    < NOT: "!" > |
+
+	< #EQUAL: "=" > |
+	< LPAREN: "(" > |
+	< RPAREN: ")" > |
+	< LACC: "{" > |
+	< RACC: "}" > |
+	< LBRA: "[" > |
+	< RBRA: "]" > |
+	< COLON: ":" > |
+	< SEMICOLON: ";" > |
+	< COMMA: "," > |
+	< #AND: "&&" > |
+	< #OR: "||" > |
+	< ENUM: "enum" > |
+	< BREAK: "break" >
+	// À compléter au besoin
+}
+
+
+// Identifiers and numbers
+TOKEN :
+{
+	< IDENTIFIER: <LETTER> ( <LETTER> | <DIGIT> )* > |
+	< #LETTER: ["a"-"z","A"-"Z","_"] > |
+	< #DIGIT: ["0"-"9"] > |
+	< INTEGER: ["1"-"9"] (["0"-"9"])* | "0" > |
+	< REAL: (<INTEGER>)? "." (<INTEGER>)* (("e" | "E") (<PLUS> | <MINUS>) (<INTEGER>)+)? >
+}
+
+
+
+
+//
+// SYNTAX ANALYSIS
+//
+
+ASTProgram Program() : {}
+{
+	Block() <EOF> { return jjtThis;  }
+}
+
+void Block() #void : {}
+{
+	 ( Stmt() )*
+}
+
+// ---------- STATEMENTS BEGIN ----------
+
+void Stmt() #void : {}
+{
+	AssignStmt() <SEMICOLON> |
+	WhileStmt() |
+	DoWhileStmt()  <SEMICOLON> |
+	IfStmt() |
+	ForStmt() |
+	EnumStmt() |
+	SwitchStmt()
+}
+
+void AssignStmt() : {}
+{
+	Identifier() <ASSIGN> Expr()
+}
+
+// TODO: Ajouter tous vos statements ici (Voir énoncé)
+
+void WhileStmt() : {}
+{
+    <WHILE> <LPAREN> Expr() #WhileCond<RPAREN> (Stmt() | <LACC> Block() <RACC>) #WhileBlock
+}
+
+void DoWhileStmt() : {}
+{
+    <DO> (Stmt() | <LACC> Block() <RACC>)  #WhileBlock<WHILE><LPAREN> Expr() #WhileCond<RPAREN>
+}
+
+void IfStmt() : {}
+{
+    <IF> <LPAREN> Expr() #IfCond<RPAREN>
+    (Stmt() | <LACC> Block() <RACC>) #IfBlock(true)
+    (
+        LOOKAHEAD(2) <ELSE>
+        (
+            Stmt()
+            |
+            <LACC> Block() <RACC>
+        ) #ElseBlock
+    )?
+}
+
+void ForStmt() : {}
+{
+    <FOR> <LPAREN> [AssignStmt()] <SEMICOLON> [IntValue()] <SEMICOLON> [AssignStmt()] <RPAREN>
+    (Stmt() | <LACC> Block() <RACC>)
+}
+
+void EnumStmt() : {}
+{
+  <ENUM> (Identifier())+ <LACC> (Identifier() (<COMMA> Identifier())*)? <RACC>
+}
+
+void SwitchStmt() : {}
+{
+  <SWITCH> <LPAREN> Identifier() <RPAREN> <LACC>
+    (CaseStmt())+
+    (DefaultStmt())?
+  <RACC>
+}
+
+void CaseStmt() : {}
+{
+  <CASE> (Identifier() | IntValue()) <COLON> CaseBlock() //TODO: rendre CaseBlock optionnel mais j y arrive pas
+}
+
+
+void DefaultStmt() : {}
+{
+  <DEF> <COLON> CaseBlock()
+}
+
+void CaseBlock() : {}
+{
+  (Stmt() | BreakStmt())*
+}
+
+void BreakStmt() : {}
+{
+    <BREAK> <SEMICOLON>
+}
+
+
+
+// ---------- STATEMENTS END ----------
+
+// ---------- EXPRESSIONS BEGIN ----------
+
+void Expr() #void : {}
+{
+    LOOKAHEAD(2) BasicExpr() | ArrayExpr() | LogicalExpr()
+}
+
+
+void BasicExpr() #void : {}
+{
+	LOOKAHEAD(2) Identifier() |
+	LOOKAHEAD(2) IntValue() |
+	RealValue() |
+    <LPAREN> Expr() <RPAREN>
+}
+
+// TODO: Ajouter tous vos expressions ici (Voir énoncé)
+
+void ArrayExpr() : {}
+{
+    <LBRA> (Expr() [<COMMA>])*<RBRA>
+}
+
+void LogicalExpr() #void : {}
+{
+    ( CompareExpr() ( <LOGIC> CompareExpr() )* )#Logic(>1)
+}
+
+void CompareExpr() #void : {}
+{
+    ( AddExpr() ( <COMPARE> AddExpr() )* )#Compare(>1)
+}
+
+void AddExpr() #void : {}
+{
+    ( MulExpr() (LOOKAHEAD(2) (<PLUS> | <MINUS> ) MulExpr() )* )#Addition(>1)
+}
+
+void MulExpr() #void : {}
+{
+    ( UnaryExpr() ( ( <FOIS> | <DIV> ) UnaryExpr() )* )#Multi(>1)
+}
+
+void UnaryExpr() #void : {}
+{
+    <NOT> UnaryExpr() #Not | <MINUS> UnaryExpr() #Minus | BasicExpr()
+}
+
+// Expressions de base (Ne pas modifier):
+
+void Identifier() : {}
+{
+	<IDENTIFIER>
+}
+
+void IntValue() : {}
+{
+	<INTEGER>
+}
+
+void RealValue() : {}
+{
+    <REAL>
+}
+
+// ---------- EXPRESSIONS END ----------
